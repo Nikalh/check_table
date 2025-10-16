@@ -16,10 +16,6 @@ from aiogram.filters import Command
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
 
-# Для Render - добавляем простой веб-сервер
-from aiohttp import web
-import threading
-
 # Загружаем переменные окружения
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -310,20 +306,6 @@ async def weekly_summary():
         except Exception as e:
             print(f"Error in weekly summary for user {user_id}: {e}")
 
-# --- Простой веб-сервер для Health Checks ---
-async def health_check(request):
-    return web.Response(text="Bot is running!")
-
-def run_web_server():
-    app = web.Application()
-    app.router.add_get('/', health_check)
-    app.router.add_get('/health', health_check)
-    
-    # Получаем порт из переменной окружения (Render сам назначает)
-    port = int(os.environ.get("PORT", 10000))
-    web.run_app(app, host='0.0.0.0', port=port)
-
-
 # --- Основная функция ---
 """ async def main():
     print("✅ Bot initialized successfully")
@@ -340,16 +322,17 @@ def run_web_server():
     await dp.start_polling(bot)
  """
 
-# --- Основная функция с автоматическим перезапуском ---
+
+# --- Основная функция ---
 async def main():
     print("✅ Bot initialized successfully")
     
     # Запускаем планировщик
-    scheduler.add_job(daily_check, "cron", hour=6, minute=0, timezone="Europe/Moscow")
-    scheduler.add_job(weekly_summary, "cron", day_of_week=0, hour=7, minute=0, timezone="Europe/Moscow")
+    scheduler.add_job(daily_check, "cron", hour=6, minute=0, timezone="Europe/Moscow")  # 9:00 МСК
+    scheduler.add_job(weekly_summary, "cron", day_of_week=0, hour=7, minute=0, timezone="Europe/Moscow")  # 10:00 МСК в воскресенье
     scheduler.start()
     
-    print("⏰ Scheduler started")
+    print("⏰ Scheduler started: Daily at 09:00 MSK, Weekly on Sunday at 10:00 MSK")
     print("🤖 Bot is ready and polling...")
     
     # Запускаем бота с перезапуском при ошибках
@@ -368,8 +351,5 @@ async def main():
     print("❌ Max restarts reached. Bot stopped.")
 
 if __name__ == "__main__":
-   # Запускаем веб-сервер в отдельном потоке для Health Checks
-    web_thread = threading.Thread(target=run_web_server, daemon=True)
-    web_thread.start()
-    # Для PythonAnywhere - запуск с обработкой ошибок
+    # Простой запуск для Render Background Worker
     asyncio.run(main())

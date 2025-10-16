@@ -1,6 +1,6 @@
-aiogram==3.3.0
-apscheduler==3.10.4
-python-dotenv==1.0.0
-pandas==1.5.3  # Более старая версия, меньше памяти
-openpyxl==3.1.1  # Стабильная версия
-requests==2.28.2
+aiogram
+apscheduler
+python-dotenv
+pandas
+openpyxl
+requests

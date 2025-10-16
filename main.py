@@ -4,13 +4,14 @@ import os
 import datetime
 import sys
 import html
+import gc  # Добавляем сборщик мусора
 
-print("🚀 Starting Telegram Excel Bot on PythonAnywhere...")
+print("🚀 Starting Telegram Excel Bot on Render (Optimized)...")
 
 # Импорты
 import pandas as pd
 from openpyxl import load_workbook
-import requests  # Используем requests вместо aiohttp
+import requests
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -31,99 +32,7 @@ dp = Dispatcher()
 scheduler = AsyncIOScheduler()
 user_data = {}
 
-# --- Экранирование текста ---
-def escape_md(text):
-    if not text:
-        return ""
-    escape_chars = r'\_*[]()~`>#+-=|{}.!'
-    return ''.join(f'\\{c}' if c in escape_chars else c for c in str(text))
-
-# --- Безопасное приведение к дате ---
-def parse_date(val):
-    if val is None:
-        return None
-    try:
-        return pd.to_datetime(val).date()
-    except Exception:
-        return None
-
-# --- Проверка выполненности задачи ---
-def is_done(cell):
-    if not cell:
-        return False
-    try:
-        # Черный шрифт
-        font_black = False
-        if hasattr(cell, 'font') and cell.font:
-            if hasattr(cell.font, 'color') and cell.font.color:
-                if hasattr(cell.font.color, 'rgb') and cell.font.color.rgb:
-                    font_color = str(cell.font.color.rgb).upper()
-                    font_black = font_color in ["FF000000", "00000000", "000000", "FF00000000", None]
-        
-        # Зеленая заливка
-        green_fill = False
-        if hasattr(cell, 'fill') and cell.fill:
-            if hasattr(cell.fill, 'fill_type') and cell.fill.fill_type is not None:
-                if hasattr(cell.fill, 'fgColor') and cell.fill.fgColor:
-                    if hasattr(cell.fill.fgColor, 'rgb') and cell.fill.fgColor.rgb:
-                        fill_color = str(cell.fill.fgColor.rgb).upper()
-                        green_fill = (
-                            fill_color.startswith("FF00") or 
-                            fill_color.startswith("00FF") or 
-                            fill_color.startswith("0092") or
-                            fill_color.startswith("FF92") or
-                            "92D050" in fill_color or
-                            "00FF00" in fill_color
-                        )
-        
-        return font_black or green_fill
-        
-    except Exception as e:
-        print(f"Error in is_done: {e}")
-        return False
-
-# --- Скачивание файла через requests ---
-async def download_file(user_id):
-    data = user_data.get(user_id)
-    if not data:
-        await bot.send_message(user_id, "❌ Данные пользователя не найдены.")
-        return None
-        
-    file_path = f"user_{user_id}.xlsx"
-    
-    # Если есть ссылка - скачиваем
-    if data.get("link"):
-        try:
-            print(f"📥 Downloading file from: {data['link']}")
-            
-            # Используем requests вместо aiohttp
-            response = requests.get(data["link"], timeout=30)
-            if response.status_code == 200:
-                with open(file_path, "wb") as f:
-                    f.write(response.content)
-                user_data[user_id]["path"] = file_path
-                print(f"✅ File downloaded successfully: {file_path}")
-                return file_path
-            else:
-                await bot.send_message(user_id, f"❌ Ошибка скачивания: HTTP {response.status_code}")
-                return None
-                
-        except Exception as e:
-            await bot.send_message(user_id, f"❌ Ошибка скачивания файла: {e}")
-            return None
-    
-    # Если есть локальный путь
-    if data.get("path"):
-        if os.path.exists(data["path"]):
-            return data["path"]
-        else:
-            await bot.send_message(user_id, f"❌ Файл не найден по пути: {data['path']}")
-            return None
-    
-    await bot.send_message(user_id, "❌ Файл не найден.")
-    return None
-
-# --- Проверка Excel ---
+# --- Оптимизированная проверка Excel ---
 async def check_excel(user_id, notify_today=True, week_summary=False):
     print(f"🔍 Checking Excel for user {user_id}")
     
@@ -132,7 +41,8 @@ async def check_excel(user_id, notify_today=True, week_summary=False):
         return
         
     try:
-        wb = load_workbook(file_path, data_only=True)
+        # Оптимизация: загружаем только нужные данные
+        wb = load_workbook(file_path, data_only=True, read_only=True)  # read_only для экономии памяти
     except Exception as e:
         await bot.send_message(user_id, f"❌ Ошибка открытия файла: {e}")
         return
@@ -140,30 +50,33 @@ async def check_excel(user_id, notify_today=True, week_summary=False):
     sheet_name = "Согласование документации"
     if sheet_name not in wb.sheetnames:
         await bot.send_message(user_id, f"❌ Лист '{sheet_name}' не найден")
+        wb.close()  # Закрываем файл
         return
         
     ws = wb[sheet_name]
     today = datetime.date.today()
     overdue_items = []
 
-    headers = [cell.value for cell in ws[1]]
+    # Читаем заголовки
+    headers = []
+    for cell in ws[1]:
+        headers.append(cell.value)
+    
     col_map = {name: idx for idx, name in enumerate(headers) if name}
 
     days_limit = user_data[user_id].get("days", 30)
 
+    # Обрабатываем строки с оптимизацией памяти
     for row_idx, row in enumerate(ws.iter_rows(min_row=2), start=2):
         try:
-            obj_cell = row[col_map.get("Объект")] if "Объект" in col_map else None
-            task_cell = row[col_map.get("Сооружение")] if "Сооружение" in col_map else None
-            resp_cell = row[col_map.get("Ответственный")] if "Ответственный" in col_map else None
-            subject_cell = row[col_map.get("Предмет письма")] if "Предмет письма" in col_map else None
-            pg_cell = row[col_map.get("Срок от ПГ")] if "Срок от ПГ" in col_map else None
-            cc_cell = row[col_map.get("Направил в ЦЦО")] if "Направил в ЦЦО" in col_map else None
-
-            obj = obj_cell.value if obj_cell else ""
-            task = task_cell.value if task_cell else ""
-            resp = resp_cell.value if resp_cell else ""
-            subject = subject_cell.value if subject_cell else ""
+            # Только нужные колонки
+            obj = row[col_map["Объект"]].value if "Объект" in col_map else ""
+            task = row[col_map["Сооружение"]].value if "Сооружение" in col_map else ""
+            resp = row[col_map["Ответственный"]].value if "Ответственный" in col_map else ""
+            subject = row[col_map["Предмет письма"]].value if "Предмет письма" in col_map else ""
+            
+            pg_cell = row[col_map["Срок от ПГ"]] if "Срок от ПГ" in col_map else None
+            cc_cell = row[col_map["Направил в ЦЦО"]] if "Направил в ЦЦО" in col_map else None
 
             date_pg = parse_date(pg_cell.value if pg_cell else None)
             date_cc = parse_date(cc_cell.value if cc_cell else None)
@@ -172,18 +85,18 @@ async def check_excel(user_id, notify_today=True, week_summary=False):
             if pg_cell and date_pg and date_pg <= today and not is_done(pg_cell):
                 overdue_items.append(
                     f"📍 <b>{html.escape(str(obj))}</b>\n"
-                    f"📝 {html.escape(str(task))}\n"
-                    f"👤 {html.escape(str(resp))}\n"
-                    f"✉ {html.escape(str(subject))}\n"
+                    f"📝 {html.escape(str(task))}</b>\n"
+                    f"👤 {html.escape(str(resp))}</b>\n"
+                    f"✉ {html.escape(str(subject))}</b>\n"
                     f"⏰ Срок от ПГ: {html.escape(str(date_pg))}"
                 )
                 
             if cc_cell and date_cc and (today - date_cc).days >= days_limit and not is_done(cc_cell):
                 overdue_items.append(
                     f"📍 <b>{html.escape(str(obj))}</b>\n"
-                    f"📝 {html.escape(str(task))}\n"
-                    f"👤 {html.escape(str(resp))}\n"
-                    f"✉ {html.escape(str(subject))}\n"
+                    f"📝 {html.escape(str(task))}</b>\n"
+                    f"👤 {html.escape(str(resp))}</b>\n"
+                    f"✉ {html.escape(str(subject))}</b>\n"
                     f"⏰ Направлено в ЦЦО: {html.escape(str(date_cc))} ({html.escape(str((today - date_cc).days))} дней)"
                 )
                 
@@ -191,8 +104,11 @@ async def check_excel(user_id, notify_today=True, week_summary=False):
             print(f"Error in row {row_idx}: {e}")
             continue
 
+    # Закрываем workbook для освобождения памяти
+    wb.close()
+
     if overdue_items:
-        header = f"⚠️ {len(overdue_items)-1} Просроченные задачи на сегодня {today}:\n\n" if notify_today else "📋 Сводка задач на неделю:\n\n"
+        header = f"⚠️ {len(overdue_items)} Просроченные задачи на сегодня {today}:\n\n" if notify_today else "📋 Сводка задач на неделю:\n\n"
         msg = header + "\n\n".join(overdue_items)
         
         chunks = [msg[i:i+4000] for i in range(0, len(msg), 4000)]
@@ -212,6 +128,9 @@ async def check_excel(user_id, notify_today=True, week_summary=False):
         await bot.send_message(user_id, "✅ Все задачи на этой неделе в срок.")
     elif notify_today:
         await bot.send_message(user_id, "✅ На сегодня просроченных задач нет.")
+    
+    # Принудительная очистка памяти
+    gc.collect()
 
 # --- Команды ---
 @dp.message(Command("start"))
@@ -328,11 +247,11 @@ async def main():
     print("✅ Bot initialized successfully")
     
     # Запускаем планировщик
-    scheduler.add_job(daily_check, "cron", hour=6, minute=0, timezone="Europe/Moscow")  # 9:00 МСК
-    scheduler.add_job(weekly_summary, "cron", day_of_week=0, hour=7, minute=0, timezone="Europe/Moscow")  # 10:00 МСК в воскресенье
+    scheduler.add_job(daily_check, "cron", hour=6, minute=0, timezone="Europe/Moscow")
+    scheduler.add_job(weekly_summary, "cron", day_of_week=0, hour=7, minute=0, timezone="Europe/Moscow")
     scheduler.start()
     
-    print("⏰ Scheduler started: Daily at 09:00 MSK, Weekly on Sunday at 10:00 MSK")
+    print("⏰ Scheduler started")
     print("🤖 Bot is ready and polling...")
     
     # Запускаем бота с перезапуском при ошибках
@@ -351,5 +270,4 @@ async def main():
     print("❌ Max restarts reached. Bot stopped.")
 
 if __name__ == "__main__":
-    # Простой запуск для Render Background Worker
     asyncio.run(main())

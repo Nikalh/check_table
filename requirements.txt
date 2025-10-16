@@ -1,7 +1,7 @@
-aiogram==3.3.0
-apscheduler==3.10.4
-python-dotenv==1.0.0
-pandas==2.0.3
-openpyxl==3.1.2
-aiohttp==3.8.5
-requests==2.31.0
+aiogram
+apscheduler
+python-dotenv
+pandas
+openpyxl
+aiohttp
+requests

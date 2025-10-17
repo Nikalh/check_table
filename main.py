@@ -331,8 +331,8 @@ async def main():
     print("✅ Bot initialized successfully")
     
     # Запускаем планировщик
-    scheduler.add_job(daily_check, "cron", hour=6, minute=0, timezone="Europe/Moscow")
-    scheduler.add_job(weekly_summary, "cron", day_of_week=0, hour=7, minute=0, timezone="Europe/Moscow")
+    scheduler.add_job(daily_check, "cron", hour=9, minute=0, timezone="Europe/Moscow")
+    scheduler.add_job(weekly_summary, "cron", day_of_week=0, hour=9, minute=0, timezone="Europe/Moscow")
     scheduler.start()
     
     print("⏰ Scheduler started")
